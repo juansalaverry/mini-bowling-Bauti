@@ -122,7 +122,6 @@
             font-weight: bold;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(56, 189, 248, 0.3);
-            transition: transform 0.1s;
         }
 
         button.action-btn:active {
@@ -145,7 +144,6 @@
             font-weight: bold;
             font-size: 0.95rem;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
         .pin-btn:hover {
@@ -281,14 +279,10 @@
                 <input type="number" id="pinosInput" placeholder="Pinos (0-10)" min="0" max="10" inputmode="numeric">
                 <button class="action-btn" onclick="registrarTiroManual()">Tirar</button>
             </div>
-            <div class="quick-pins" id="quickPinsContainer">
-                <!-- Botones rápidos de 0 a 10 -->
-            </div>
+            <div class="quick-pins" id="quickPinsContainer"></div>
         </div>
 
-        <div id="boardsContainer" class="boards-container">
-            <!-- Las tarjetas de jugadores se generan acá -->
-        </div>
+        <div id="boardsContainer" class="boards-container"></div>
 
         <div class="btn-container">
             <button class="btn-secondary" onclick="configurarJugadores()">Jugadores</button>
@@ -297,16 +291,22 @@
     </div>
 
     <script>
-        const MAX_FRAMES = 5; // 5 marcos por partida para hacerlo ágil en mini bowling
+        const MAX_FRAMES = 5;
         let estadoJuego = {
             jugadores: ["Bauti", "Juan"],
             indiceTurno: 0,
             marcoActual: 1,
-            tiroEnMarco: 1, // 1 o 2
-            datos: {} // Estructura: { "Bauti": { frames: [[], [], [], [], []], total: 0 } }
+            tiroEnMarco: 1,
+            datos: {}
         };
 
-        function inicializarDatos() {
+        function inicializarEstructura() {
+            if (!estadoJuego.jugadores || estadoJuego.jugadores.length === 0) {
+                estadoJuego.jugadores = ["Bauti", "Juan"];
+            }
+            if (!estadoJuego.datos) {
+                estadoJuego.datos = {};
+            }
             estadoJuego.jugadores.forEach(j => {
                 if (!estadoJuego.datos[j]) {
                     estadoJuego.datos[j] = {
@@ -318,16 +318,18 @@
         }
 
         function guardarMemoria() {
-            localStorage.setItem('mini_bowling_state', JSON.stringify(estadoJuego));
+            localStorage.setItem('mini_bowling_state_v2', JSON.stringify(estadoJuego));
         }
 
         function cargarMemoria() {
-            const guardado = localStorage.getItem('mini_bowling_state');
+            const guardado = localStorage.getItem('mini_bowling_state_v2');
             if (guardado) {
                 try {
-                    estadoJuego = JSON.parse(guardado);
-                    if (!estadoJuego.jugadores || estadoJuego.jugadores.length === 0) {
-                        throw new Error();
+                    let parsed = JSON.parse(guardado);
+                    if (parsed && parsed.jugadores && parsed.jugadores.length > 0) {
+                        estadoJuego = parsed;
+                    } else {
+                        resetearJuegoCompleto();
                     }
                 } catch (e) {
                     resetearJuegoCompleto();
@@ -335,20 +337,24 @@
             } else {
                 resetearJuegoCompleto();
             }
+            inicializarEstructura();
         }
 
         function resetearJuegoCompleto() {
-            estadoJuego.jugadores = ["Bauti", "Juan"];
-            estadoJuego.indiceTurno = 0;
-            estadoJuego.marcoActual = 1;
-            estadoJuego.tiroEnMarco = 1;
-            estadoJuego.datos = {};
-            inicializarDatos();
+            estadoJuego = {
+                jugadores: ["Bauti", "Juan"],
+                indiceTurno: 0,
+                marcoActual: 1,
+                tiroEnMarco: 1,
+                datos: {}
+            };
+            inicializarEstructura();
             guardarMemoria();
         }
 
         function configurarJugadores() {
-            let inputNombres = prompt("Ingresá los nombres de los jugadores separados por coma:", estadoJuego.jugadores.join(", "));
+            let actual = estadoJuego.jugadores ? estadoJuego.jugadores.join(", ") : "Bauti, Juan";
+            let inputNombres = prompt("Ingresá los nombres de los jugadores separados por coma:", actual);
             if (!inputNombres || inputNombres.trim() === "") return;
 
             let nuevosJugadores = inputNombres.split(',').map(n => n.trim()).filter(n => n.length > 0);
@@ -359,13 +365,14 @@
             estadoJuego.marcoActual = 1;
             estadoJuego.tiroEnMarco = 1;
             estadoJuego.datos = {};
-            inicializarDatos();
+            inicializarEstructura();
             guardarMemoria();
             actualizarUI();
         }
 
         function generarBotonesRapidos() {
             const container = document.getElementById('quickPinsContainer');
+            if (!container) return;
             container.innerHTML = '';
             for (let i = 0; i <= 10; i++) {
                 const btn = document.createElement('button');
@@ -378,6 +385,7 @@
 
         function registrarTiroManual() {
             const input = document.getElementById('pinosInput');
+            if (!input) return;
             const valor = parseInt(input.value);
             if (isNaN(valor) || valor < 0 || valor > 10) {
                 alert("Por favor ingresa un número válido entre 0 y 10.");
@@ -397,7 +405,6 @@
             const frameIndex = estadoJuego.marcoActual - 1;
             const tirosDelFrame = estadoJuego.datos[jugadorActual].frames[frameIndex];
 
-            // Validar que en el segundo tiro no sumen más de 10 (salvo que sea el marco final o reglas especiales, acatando pinos restantes)
             if (estadoJuego.tiroEnMarco === 2) {
                 let primerTiro = tirosDelFrame[0];
                 if (primerTiro < 10 && (primerTiro + pinos) > 10) {
@@ -406,24 +413,15 @@
                 }
             }
 
-            // Registrar tiro
             tirosDelFrame.push(pinos);
-
-            // Calcular totales y verificar reglas de avance
             recalcularPuntajes();
 
             let esStrike = (estadoJuego.tiroEnMarco === 1 && pinos === 10);
-            let finDelTurno = false;
-
-            if (esStrike || estadoJuego.tiroEnMarco === 2) {
-                finDelTurno = true;
-            }
+            let finDelTurno = (esStrike || estadoJuego.tiroEnMarco === 2);
 
             if (finDelTurno) {
                 estadoJuego.tiroEnMarco = 1;
                 estadoJuego.indiceTurno = (estadoJuego.indiceTurno + 1) % estadoJuego.jugadores.length;
-
-                // Si dio toda la ronda y volvió al primer jugador, avanzamos de marco
                 if (estadoJuego.indiceTurno === 0) {
                     estadoJuego.marcoActual++;
                 }
@@ -450,13 +448,15 @@
             const turnoText = document.getElementById('turnoText');
             const frameBadge = document.getElementById('frameBadge');
 
+            if (!container || !turnoText || !frameBadge) return;
+
             const jugadorActual = estadoJuego.jugadores[estadoJuego.indiceTurno];
 
             if (estadoJuego.marcoActual > MAX_FRAMES) {
                 turnoText.innerHTML = `🏆 <b>¡Partida Finalizada!</b>`;
                 frameBadge.textContent = `Fin`;
             } else {
-                turnoText.innerHTML = `Turno de: <b>${jugadorActual</b>} (Tiro ${estadoJuego.tiroEnMarco})`;
+                turnoText.innerHTML = `Turno: <b>${jugadorActual}</b> (Tiro ${estadoJuego.tiroEnMarco})`;
                 frameBadge.textContent = `Marco ${estadoJuego.marcoActual}/${MAX_FRAMES}`;
             }
 
@@ -471,11 +471,10 @@
 
                 let framesHTML = '';
                 for (let f = 0; f < MAX_FRAMES; f++) {
-                    let tiros = info.frames[f];
+                    let tiros = info.frames[f] || [];
                     let t1 = tiros[0] !== undefined ? tiros[0] : '';
                     let t2 = tiros[1] !== undefined ? tiros[1] : '';
 
-                    // Formato visual Strike / Spare
                     let marca1 = t1;
                     let marca2 = t2;
                     let claseT1 = "";
@@ -522,10 +521,12 @@
             }
         }
 
-        // Inicializar al cargar la página
-        cargarMemoria();
-        generarBotonesRapidos();
-        actualizarUI();
+        // Inicialización segura al cargar
+        window.onload = function() {
+            cargarMemoria();
+            generarBotonesRapidos();
+            actualizarUI();
+        };
     </script>
 </body>
 </html>
